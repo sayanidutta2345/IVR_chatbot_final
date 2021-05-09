@@ -28,7 +28,7 @@ virtualenv env
 env/Scripts/activate
 pip install -r requirements.txt
 ```
-Create an AppointmentScheduler.json file inside **chat** directory and paste the contents from the AppointmentScheduler.json file uploaded in drive [link provided in ppt]
+Create an AppointmentScheduler.json file inside **chat** directory and paste the contents from the AppointmentScheduler.json file uploaded in the submitted zip file [link provided in ppt]
 
 Run the Django migrations to add your models to database if in case they are not imported properly:
 ```js
