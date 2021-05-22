@@ -20,6 +20,12 @@ from django.core.mail import EmailMessage
 from django.contrib.auth.decorators import login_required
 from django.template.loader import render_to_string
 from django.contrib.auth.forms import User
+from .reply import order_Not
+from .tokens import account_activation_token
+from django.contrib.sites.shortcuts import get_current_site
+from django.utils.encoding import force_bytes, force_text
+from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
+
 @require_http_methods(['GET'])
 def index_view(request):
     return render(request, 'chathome.html')
@@ -31,14 +37,49 @@ def reg_view(request):
     if request.method == 'POST':
         form = UserRegistrationForm(request.POST)
         if form.is_valid():
-            form.save()
+            user = form.save(commit=False)
+            user.is_active = False
+            user.save()
             # user.profile.email = form.cleaned_data.get('email')
-            username = form.cleaned_data.get('username')
-            messages.success(request,"Account Created for %s is created. Login!" %username)
-            return redirect('login') 
+            # username = form.cleaned_data.get('username')
+            current_site = get_current_site(request)
+            mail_subject = 'Activate your blog account.'
+            message = render_to_string('acc_active_email.html', {
+                'user': user,
+                'domain': current_site.domain,
+                'uid':urlsafe_base64_encode(force_bytes(user.pk)),
+                'token':account_activation_token.make_token(user),
+            })
+            to_email = 'ivrbot123@gmail.com'
+            email = EmailMessage(
+                        mail_subject, message, to=[to_email]
+            )
+            email.send()
+            return redirect('activation_sent')
+            # return HttpResponse('Please confirm your email address to complete the registration')
+            # messages.success(request,"Account Created for %s is created. Login!" %username)
+            # return redirect('login') 
     else:
         form = UserRegistrationForm()
     return render(request, 'register.html', {'form':form})
+
+def activation_sent_view(request):
+    return render(request, 'activation_sent.html')
+
+def activate(request, uidb64, token):
+    try:
+        uid = force_text(urlsafe_base64_decode(uidb64))
+        user = User.objects.get(pk=uid)
+    except(TypeError, ValueError, OverflowError, User.DoesNotExist):
+        user = None
+    if user is not None and account_activation_token.check_token(user, token):
+        user.is_active = True
+        user.save()
+        username = user.username
+        messages.success(request,"Account Created for %s is created. Login!" %username)
+        return redirect('login')
+    else:
+        return HttpResponse('Activation link is invalid!')
 
 def convert(data):
     if isinstance(data, bytes):
@@ -50,73 +91,30 @@ def convert(data):
 
     return data
 
-# @csrf_exempt
-# @require_http_methods(['POST'])
-# def webhook(request):
-#     # build a request object
-#     # input_dict = convert(request.body)
-#     # print(input_dict)
-#     print("efsghfeh")
-#     input_text = json.loads(request.body)
-#     print(input_text)
-    
-#     order_id = input_text['queryResult']['parameters']['orderid']
-#     if(order_id != ''):
-#         order_id = int(order_id)
-#     print(order_id)
-#     order = Order.objects.filter(orderid = order_id).first()
-#     context_name = input_text['queryResult']['outputContexts'][0]['name']
 
-#     print(context_name)
-#     # get action from json
-#     # action = request.get('queryResult').get('action')
-#     # return a fulfillment message
-#     # order = Order.objects.get(orderid = input_text)
-#     # print(type(order))
-#     # print(order.orderid) 
-#     # print(order_reply)
-#     # ff_response = fulfillment_response()
-#     if(order != None):
-#         reply = {
-#                 "fulfillmentMessages": [
-#                     {
-#                     "text": {
-#                         "text": [
-                            
-#                             'Order ID: ' + order.orderid + '\nOrder Name: ' + order.name + '\nOrder Details: ' + order.details + '\nOrder Status: ' + order.status + '\nOrder Date: ' + str(order.date_ordered) 
+@csrf_exempt
+@require_http_methods(['POST'])
+def lang_view(request):
 
-#                         ]
-#                     }
-#                     }
-#                 ]
-#                 }
-#     else:
-
-#         reply = ' order id you enetered is not valid. Please enter a valid order id'
-     
-#         reply = {
-#                 "fulfillmentMessages": [
-#                     {
-#                     "text": {
-#                         "text": [
-                            
-#                             'The' + reply
-
-#                         ]
-#                     }
-#                     }
-#                 ]
-#                 }
-#     print(reply)
-#     return JsonResponse(reply, safe = False)
+    print(request.body)
+    input_text = json.loads(request.body)['text']
+    print(input_text)
+    global language_code
+    language_code = input_text
+    return HttpResponse("Language changed", status=200)
 
 @csrf_exempt
 @require_http_methods(['POST'])
 def chat_view(request):
+    if 'language_code' in globals():
+        lang_code = language_code
+    else: 
+        lang_code ='en'
+    print(order_Not()[lang_code])
     if request.user.is_authenticated:
         print('Body', request.body)
-        input_dict = convert(request.body)
-        input_text = json.loads(input_dict)['text']
+        # input_dict = convert(request.body)
+        input_text = json.loads(request.body)['text']
 
         GOOGLE_AUTHENTICATION_FILE_NAME = "AppointmentScheduler.json"
         current_directory = os.path.dirname(os.path.realpath(__file__))
@@ -141,17 +139,17 @@ def chat_view(request):
         # print(context_1)
         query_params_1 = {"contexts": [context_1]}
 
-        language_code = 'en'
+        print("language ",  lang_code)
         
         response = detect_intent_with_parameters(
             project_id=GOOGLE_PROJECT_ID,
             session_id=session_id,
             query_params=query_params_1,
-            language_code=language_code,
+            language_code=lang_code,
             user_input=input_text
         )
         print("hfeifbfrif")
-        print(response)
+        # print(response)
         print(response.query_result.parameters.fields["orderid"].number_value)
         order_id = int(response.query_result.parameters.fields["orderid"].number_value)
         # if(response.query.fullfillment_text == "order id"):
@@ -166,7 +164,7 @@ def chat_view(request):
                 # print(order_reply)
                 # return HttpResponse(order_reply, status=200)
             else:
-                order_reply = 'The order id you enetered is not valid. Please enter a valid order id'
+                order_reply = order_Not()[lang_code]
                 response.query_result.fulfillment_messages[0].text.text[0] = order_reply
                 # return HttpResponse(order_reply, status=200)
         if(response.query_result.intent.display_name == "appointment schedule - yes"):
@@ -184,7 +182,22 @@ def chat_view(request):
                 to_email = 'canbecreated@gmail.com'
             email_user = EmailMessage(subject, message, to=[to_email])
             email_user.send()
+        if(response.query_result.intent.display_name == "appointment schedule"):
+            print("fhfg")
+            print(response.query_result.all_required_params_present)
+            if(response.query_result.all_required_params_present == True):
+                print("response all parama")
+                temp = response.query_result.fulfillment_messages[0].text.text[0].split('T')
+                result = temp[0][0:-10] + temp[1][0:8] + temp[1][14:]+temp[2][14:] 
+                if(len(temp) == 4):
+                    result = result + 'T' + temp[3]
+                print(result)
+                response.query_result.fulfillment_messages[0].text.text[0] = result
+
         print(response.query_result.fulfillment_messages[0].text.text[0])
+
+        reply = response.query_result.fulfillment_messages[0].text.text[0]
+
 
         return HttpResponse(response.query_result.fulfillment_messages[0].text.text[0], status=200)
     else:
@@ -212,7 +225,7 @@ def detect_intent_with_parameters(project_id, session_id, query_params, language
         session=session, query_input=query_input,
         query_params=query_params
     )
-
+    
     print('=' * 20)
     print('Query text: {}'.format(response.query_result.query_text))
     print('Detected intent: {} (confidence: {})\n'.format(
